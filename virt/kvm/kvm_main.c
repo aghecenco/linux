@@ -56,6 +56,8 @@
 #include <asm/ioctl.h>
 #include <linux/uaccess.h>
 
+#include <linux/timekeeping.h>
+
 #include "coalesced_mmio.h"
 #include "async_pf.h"
 #include "vfio.h"
@@ -1400,10 +1402,19 @@ EXPORT_SYMBOL_GPL(kvm_set_memory_region);
 static int kvm_vm_ioctl_set_memory_region(struct kvm *kvm,
 					  struct kvm_userspace_memory_region *mem)
 {
+	unsigned long long ns_before, ns_elapsed;
+	int ret;
+	ns_before = ktime_get_ns();
+
 	if ((u16)mem->slot >= KVM_USER_MEM_SLOTS)
 		return -EINVAL;
 
-	return kvm_set_memory_region(kvm, mem);
+	ret = kvm_set_memory_region(kvm, mem);
+
+	ns_elapsed = ktime_get_ns() - ns_before;
+	printk(KERN_ERR "[kvmprof] kvm_vm_ioctl_set_memory_region %llu ns\n", ns_elapsed);
+
+	return ret;
 }
 
 #ifndef CONFIG_KVM_GENERIC_DIRTYLOG_READ_PROTECT
@@ -3091,6 +3102,9 @@ static int kvm_vm_ioctl_create_vcpu(struct kvm *kvm, u32 id)
 	int r;
 	struct kvm_vcpu *vcpu;
 	struct page *page;
+	unsigned long long ns_before, ns_elapsed;
+
+	ns_before = ktime_get_ns();
 
 	if (id >= KVM_MAX_VCPU_ID)
 		return -EINVAL;
@@ -3157,6 +3171,10 @@ static int kvm_vm_ioctl_create_vcpu(struct kvm *kvm, u32 id)
 	mutex_unlock(&kvm->lock);
 	kvm_arch_vcpu_postcreate(vcpu);
 	kvm_create_vcpu_debugfs(vcpu);
+
+	ns_elapsed = ktime_get_ns() - ns_before;
+	printk(KERN_ERR "[kvmprof] kvm_vm_ioctl_create_vcpu %llu ns\n", ns_elapsed);
+
 	return r;
 
 unlock_vcpu_destroy:
@@ -3254,14 +3272,21 @@ out_free1:
 	}
 	case KVM_SET_REGS: {
 		struct kvm_regs *kvm_regs;
+		unsigned long long ns_before, ns_elapsed;
 
+		ns_before = ktime_get_ns();
 		kvm_regs = memdup_user(argp, sizeof(*kvm_regs));
+		ns_elapsed = ktime_get_ns() - ns_before;
+		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_REGS:memdup_user %llu ns\n", ns_elapsed);
+
 		if (IS_ERR(kvm_regs)) {
 			r = PTR_ERR(kvm_regs);
 			goto out;
 		}
 		r = kvm_arch_vcpu_ioctl_set_regs(vcpu, kvm_regs);
 		kfree(kvm_regs);
+		ns_elapsed = ktime_get_ns() - ns_before;
+		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_REGS:total %llu ns\n", ns_elapsed);
 		break;
 	}
 	case KVM_GET_SREGS: {
@@ -3280,13 +3305,19 @@ out_free1:
 		break;
 	}
 	case KVM_SET_SREGS: {
+		unsigned long long ns_before, ns_elapsed;
+		ns_before = ktime_get_ns();
 		kvm_sregs = memdup_user(argp, sizeof(*kvm_sregs));
+		ns_elapsed = ktime_get_ns() - ns_before;
+		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_SREGS:memdup_user %llu ns\n", ns_elapsed);
 		if (IS_ERR(kvm_sregs)) {
 			r = PTR_ERR(kvm_sregs);
 			kvm_sregs = NULL;
 			goto out;
 		}
 		r = kvm_arch_vcpu_ioctl_set_sregs(vcpu, kvm_sregs);
+		ns_elapsed = ktime_get_ns() - ns_before;
+		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_SREGS:total %llu ns\n", ns_elapsed);
 		break;
 	}
 	case KVM_GET_MP_STATE: {
@@ -3372,13 +3403,19 @@ out_free1:
 		break;
 	}
 	case KVM_SET_FPU: {
+		unsigned long long ns_before, ns_elapsed;
+		ns_before = ktime_get_ns();
 		fpu = memdup_user(argp, sizeof(*fpu));
+		ns_elapsed = ktime_get_ns() - ns_before;
+		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_FPU:memdup_user %llu ns\n", ns_elapsed);
 		if (IS_ERR(fpu)) {
 			r = PTR_ERR(fpu);
 			fpu = NULL;
 			goto out;
 		}
 		r = kvm_arch_vcpu_ioctl_set_fpu(vcpu, fpu);
+		ns_elapsed = ktime_get_ns() - ns_before;
+		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_FPU:total %llu ns\n", ns_elapsed);
 		break;
 	}
 	default:
@@ -3698,13 +3735,19 @@ static long kvm_vm_ioctl(struct file *filp,
 	}
 	case KVM_SET_USER_MEMORY_REGION: {
 		struct kvm_userspace_memory_region kvm_userspace_mem;
+		unsigned long long ns_before, ns_elapsed;
 
 		r = -EFAULT;
+		ns_before = ktime_get_ns();
 		if (copy_from_user(&kvm_userspace_mem, argp,
 						sizeof(kvm_userspace_mem)))
 			goto out;
+		ns_elapsed = ktime_get_ns() - ns_before;
+		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_USER_MEMORY_REGION:copy_from_user %llu ns\n", ns_elapsed);
 
 		r = kvm_vm_ioctl_set_memory_region(kvm, &kvm_userspace_mem);
+		ns_elapsed = ktime_get_ns() - ns_before;
+		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_USER_MEMORY_REGION:total %llu ns\n", ns_elapsed);
 		break;
 	}
 	case KVM_GET_DIRTY_LOG: {
@@ -3910,9 +3953,13 @@ static struct file_operations kvm_vm_fops = {
 
 static int kvm_dev_ioctl_create_vm(unsigned long type)
 {
+	unsigned long long ns_before, ns_elapsed;
+
 	int r;
 	struct kvm *kvm;
 	struct file *file;
+
+	ns_before = ktime_get_ns();
 
 	kvm = kvm_create_vm(type);
 	if (IS_ERR(kvm))
@@ -3947,6 +3994,11 @@ static int kvm_dev_ioctl_create_vm(unsigned long type)
 	kvm_uevent_notify_change(KVM_EVENT_CREATE_VM, kvm);
 
 	fd_install(r, file);
+
+	ns_elapsed = ktime_get_ns() - ns_before;
+
+	printk(KERN_ERR "[kvmprof] kvm_dev_ioctl_create_vm %llu ns\n", ns_elapsed);
+
 	return r;
 
 put_kvm:

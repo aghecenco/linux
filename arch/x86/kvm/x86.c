@@ -76,6 +76,8 @@
 #include <asm/emulate_prefix.h>
 #include <clocksource/hyperv_timer.h>
 
+#include <linux/timekeeping.h>
+
 #define CREATE_TRACE_POINTS
 #include "trace.h"
 
@@ -9397,9 +9399,13 @@ static void __set_regs(struct kvm_vcpu *vcpu, struct kvm_regs *regs)
 
 int kvm_arch_vcpu_ioctl_set_regs(struct kvm_vcpu *vcpu, struct kvm_regs *regs)
 {
+	unsigned long long ns_before, ns_elapsed;
+	ns_before = ktime_get_ns();
 	vcpu_load(vcpu);
 	__set_regs(vcpu, regs);
 	vcpu_put(vcpu);
+	ns_elapsed = ktime_get_ns() - ns_before;
+	printk(KERN_ERR "[kvmprof] kvm_arch_vcpu_ioctl_set_regs %llu ns\n", ns_elapsed);
 	return 0;
 }
 
@@ -9650,10 +9656,15 @@ int kvm_arch_vcpu_ioctl_set_sregs(struct kvm_vcpu *vcpu,
 				  struct kvm_sregs *sregs)
 {
 	int ret;
+	unsigned long long ns_before, ns_elapsed;
 
+	ns_before = ktime_get_ns();
 	vcpu_load(vcpu);
 	ret = __set_sregs(vcpu, sregs);
 	vcpu_put(vcpu);
+	ns_elapsed = ktime_get_ns() - ns_before;
+	printk(KERN_ERR "[kvmprof] kvm_arch_vcpu_ioctl_set_sregs %llu ns\n", ns_elapsed);
+
 	return ret;
 }
 
@@ -9761,7 +9772,9 @@ int kvm_arch_vcpu_ioctl_get_fpu(struct kvm_vcpu *vcpu, struct kvm_fpu *fpu)
 int kvm_arch_vcpu_ioctl_set_fpu(struct kvm_vcpu *vcpu, struct kvm_fpu *fpu)
 {
 	struct fxregs_state *fxsave;
+	unsigned long long ns_before, ns_elapsed;
 
+	ns_before = ktime_get_ns();
 	vcpu_load(vcpu);
 
 	fxsave = &vcpu->arch.guest_fpu->state.fxsave;
@@ -9776,6 +9789,9 @@ int kvm_arch_vcpu_ioctl_set_fpu(struct kvm_vcpu *vcpu, struct kvm_fpu *fpu)
 	memcpy(fxsave->xmm_space, fpu->xmm, sizeof(fxsave->xmm_space));
 
 	vcpu_put(vcpu);
+
+	ns_elapsed = ktime_get_ns() - ns_before;
+	printk(KERN_ERR "[kvmprof] kvm_arch_vcpu_ioctl_set_fpu %llu ns\n", ns_elapsed);
 	return 0;
 }
 
