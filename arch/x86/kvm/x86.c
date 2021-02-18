@@ -9397,15 +9397,16 @@ static void __set_regs(struct kvm_vcpu *vcpu, struct kvm_regs *regs)
 	kvm_make_request(KVM_REQ_EVENT, vcpu);
 }
 
-int kvm_arch_vcpu_ioctl_set_regs(struct kvm_vcpu *vcpu, struct kvm_regs *regs)
+int kvm_arch_vcpu_ioctl_set_regs(struct kvm_vcpu *vcpu, struct kvm_regs *regs,
+								 unsigned long long* ns_elapsed)
 {
-	unsigned long long ns_before, ns_elapsed;
+	unsigned long long ns_before;
 	ns_before = ktime_get_ns();
 	vcpu_load(vcpu);
 	__set_regs(vcpu, regs);
 	vcpu_put(vcpu);
-	ns_elapsed = ktime_get_ns() - ns_before;
-	printk(KERN_ERR "[kvmprof] kvm_arch_vcpu_ioctl_set_regs %llu ns\n", ns_elapsed);
+	*ns_elapsed = ktime_get_ns() - ns_before;
+
 	return 0;
 }
 
@@ -9653,17 +9654,17 @@ out:
 }
 
 int kvm_arch_vcpu_ioctl_set_sregs(struct kvm_vcpu *vcpu,
-				  struct kvm_sregs *sregs)
+				  struct kvm_sregs *sregs,
+				  unsigned long long* ns_elapsed)
 {
 	int ret;
-	unsigned long long ns_before, ns_elapsed;
+	unsigned long long ns_before;
 
 	ns_before = ktime_get_ns();
 	vcpu_load(vcpu);
 	ret = __set_sregs(vcpu, sregs);
 	vcpu_put(vcpu);
-	ns_elapsed = ktime_get_ns() - ns_before;
-	printk(KERN_ERR "[kvmprof] kvm_arch_vcpu_ioctl_set_sregs %llu ns\n", ns_elapsed);
+	*ns_elapsed = ktime_get_ns() - ns_before;
 
 	return ret;
 }
@@ -9769,10 +9770,11 @@ int kvm_arch_vcpu_ioctl_get_fpu(struct kvm_vcpu *vcpu, struct kvm_fpu *fpu)
 	return 0;
 }
 
-int kvm_arch_vcpu_ioctl_set_fpu(struct kvm_vcpu *vcpu, struct kvm_fpu *fpu)
+int kvm_arch_vcpu_ioctl_set_fpu(struct kvm_vcpu *vcpu, struct kvm_fpu *fpu,
+								unsigned long long* ns_elapsed)
 {
 	struct fxregs_state *fxsave;
-	unsigned long long ns_before, ns_elapsed;
+	unsigned long long ns_before;
 
 	ns_before = ktime_get_ns();
 	vcpu_load(vcpu);
@@ -9790,8 +9792,7 @@ int kvm_arch_vcpu_ioctl_set_fpu(struct kvm_vcpu *vcpu, struct kvm_fpu *fpu)
 
 	vcpu_put(vcpu);
 
-	ns_elapsed = ktime_get_ns() - ns_before;
-	printk(KERN_ERR "[kvmprof] kvm_arch_vcpu_ioctl_set_fpu %llu ns\n", ns_elapsed);
+	*ns_elapsed = ktime_get_ns() - ns_before;
 	return 0;
 }
 

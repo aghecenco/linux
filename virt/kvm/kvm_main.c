@@ -1400,9 +1400,10 @@ int kvm_set_memory_region(struct kvm *kvm,
 EXPORT_SYMBOL_GPL(kvm_set_memory_region);
 
 static int kvm_vm_ioctl_set_memory_region(struct kvm *kvm,
-					  struct kvm_userspace_memory_region *mem)
+					  struct kvm_userspace_memory_region *mem,
+					  unsigned long long* ns_elapsed)
 {
-	unsigned long long ns_before, ns_elapsed;
+	unsigned long long ns_before;
 	int ret;
 	ns_before = ktime_get_ns();
 
@@ -1411,8 +1412,7 @@ static int kvm_vm_ioctl_set_memory_region(struct kvm *kvm,
 
 	ret = kvm_set_memory_region(kvm, mem);
 
-	ns_elapsed = ktime_get_ns() - ns_before;
-	printk(KERN_ERR "[kvmprof] kvm_vm_ioctl_set_memory_region %llu ns\n", ns_elapsed);
+	*ns_elapsed = ktime_get_ns() - ns_before;
 
 	return ret;
 }
@@ -3272,21 +3272,24 @@ out_free1:
 	}
 	case KVM_SET_REGS: {
 		struct kvm_regs *kvm_regs;
-		unsigned long long ns_before, ns_elapsed;
+		unsigned long long ns_before, ns_elapsed, ns_elapsed_int, ns_elapsed_tot;
 
+		ns_elapsed_int = 0;
 		ns_before = ktime_get_ns();
 		kvm_regs = memdup_user(argp, sizeof(*kvm_regs));
 		ns_elapsed = ktime_get_ns() - ns_before;
-		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_REGS:memdup_user %llu ns\n", ns_elapsed);
 
 		if (IS_ERR(kvm_regs)) {
 			r = PTR_ERR(kvm_regs);
 			goto out;
 		}
-		r = kvm_arch_vcpu_ioctl_set_regs(vcpu, kvm_regs);
+		r = kvm_arch_vcpu_ioctl_set_regs(vcpu, kvm_regs, &ns_elapsed_int);
 		kfree(kvm_regs);
-		ns_elapsed = ktime_get_ns() - ns_before;
-		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_REGS:total %llu ns\n", ns_elapsed);
+
+		ns_elapsed_tot = ktime_get_ns() - ns_before;
+		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_REGS:memdup_user %llu ns\n", ns_elapsed);
+		printk(KERN_ERR "[kvmprof] kvm_arch_vcpu_ioctl_set_regs %llu ns\n", ns_elapsed_int);
+		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_REGS:total %llu ns\n", ns_elapsed_tot);
 		break;
 	}
 	case KVM_GET_SREGS: {
@@ -3305,19 +3308,24 @@ out_free1:
 		break;
 	}
 	case KVM_SET_SREGS: {
-		unsigned long long ns_before, ns_elapsed;
+		unsigned long long ns_before, ns_elapsed, ns_elapsed_int, ns_elapsed_tot;
+
+		ns_elapsed_int = 0;
 		ns_before = ktime_get_ns();
 		kvm_sregs = memdup_user(argp, sizeof(*kvm_sregs));
 		ns_elapsed = ktime_get_ns() - ns_before;
-		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_SREGS:memdup_user %llu ns\n", ns_elapsed);
+
 		if (IS_ERR(kvm_sregs)) {
 			r = PTR_ERR(kvm_sregs);
 			kvm_sregs = NULL;
 			goto out;
 		}
-		r = kvm_arch_vcpu_ioctl_set_sregs(vcpu, kvm_sregs);
-		ns_elapsed = ktime_get_ns() - ns_before;
-		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_SREGS:total %llu ns\n", ns_elapsed);
+		r = kvm_arch_vcpu_ioctl_set_sregs(vcpu, kvm_sregs, &ns_elapsed_int);
+
+		ns_elapsed_tot = ktime_get_ns() - ns_before;
+		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_SREGS:memdup_user %llu ns\n", ns_elapsed);
+		printk(KERN_ERR "[kvmprof] kvm_arch_vcpu_ioctl_set_sregs %llu ns\n", ns_elapsed_int);
+		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_SREGS:total %llu ns\n", ns_elapsed_tot);
 		break;
 	}
 	case KVM_GET_MP_STATE: {
@@ -3403,19 +3411,24 @@ out_free1:
 		break;
 	}
 	case KVM_SET_FPU: {
-		unsigned long long ns_before, ns_elapsed;
+		unsigned long long ns_before, ns_elapsed, ns_elapsed_int, ns_elapsed_tot;
+
+		ns_elapsed_int = 0;
 		ns_before = ktime_get_ns();
 		fpu = memdup_user(argp, sizeof(*fpu));
 		ns_elapsed = ktime_get_ns() - ns_before;
-		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_FPU:memdup_user %llu ns\n", ns_elapsed);
+
 		if (IS_ERR(fpu)) {
 			r = PTR_ERR(fpu);
 			fpu = NULL;
 			goto out;
 		}
-		r = kvm_arch_vcpu_ioctl_set_fpu(vcpu, fpu);
-		ns_elapsed = ktime_get_ns() - ns_before;
-		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_FPU:total %llu ns\n", ns_elapsed);
+		r = kvm_arch_vcpu_ioctl_set_fpu(vcpu, fpu, &ns_elapsed_int);
+
+		ns_elapsed_tot = ktime_get_ns() - ns_before;
+		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_FPU:memdup_user %llu ns\n", ns_elapsed);
+		printk(KERN_ERR "[kvmprof] kvm_arch_vcpu_ioctl_set_fpu %llu ns\n", ns_elapsed_int);
+		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_FPU:total %llu ns\n", ns_elapsed_tot);
 		break;
 	}
 	default:
@@ -3735,19 +3748,22 @@ static long kvm_vm_ioctl(struct file *filp,
 	}
 	case KVM_SET_USER_MEMORY_REGION: {
 		struct kvm_userspace_memory_region kvm_userspace_mem;
-		unsigned long long ns_before, ns_elapsed;
+		unsigned long long ns_before, ns_elapsed, ns_elapsed_int, ns_elapsed_tot;
 
 		r = -EFAULT;
+		ns_elapsed_int = 0;
 		ns_before = ktime_get_ns();
 		if (copy_from_user(&kvm_userspace_mem, argp,
 						sizeof(kvm_userspace_mem)))
 			goto out;
 		ns_elapsed = ktime_get_ns() - ns_before;
-		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_USER_MEMORY_REGION:copy_from_user %llu ns\n", ns_elapsed);
 
-		r = kvm_vm_ioctl_set_memory_region(kvm, &kvm_userspace_mem);
-		ns_elapsed = ktime_get_ns() - ns_before;
-		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_USER_MEMORY_REGION:total %llu ns\n", ns_elapsed);
+		r = kvm_vm_ioctl_set_memory_region(kvm, &kvm_userspace_mem, &ns_elapsed_int);
+
+		ns_elapsed_tot = ktime_get_ns() - ns_before;
+		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_USER_MEMORY_REGION:copy_from_user %llu ns\n", ns_elapsed);
+		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl_set_memory_region %llu ns\n", ns_elapsed_int);
+		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_USER_MEMORY_REGION:total %llu ns\n", ns_elapsed_tot);
 		break;
 	}
 	case KVM_GET_DIRTY_LOG: {
