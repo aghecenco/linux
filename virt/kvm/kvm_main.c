@@ -154,6 +154,32 @@ static void kvm_uevent_notify_change(unsigned int type, struct kvm *kvm);
 static unsigned long long kvm_createvm_count;
 static unsigned long long kvm_active_vms;
 
+#define KVM_EVT_MAX_RECORDS 20000
+// KVM_SET_USER_MEMORY_REGIONS is called 8 times per VM in this test, so
+// we'll need a separate index.
+#define KVM_SET_USER_MEM_REGIONS_PER_VM 8
+
+typedef struct kvm_evt_durations {
+	unsigned long long kvm_dev_ioctl_create_vm[KVM_EVT_MAX_RECORDS];
+
+	unsigned long long kvm_vm_ioctl_set_memory_region[KVM_SET_USER_MEM_REGIONS_PER_VM * KVM_EVT_MAX_RECORDS];
+	unsigned long long kvm_vm_ioctl_KVM_SET_USER_MEMORY_REGION_total[KVM_SET_USER_MEM_REGIONS_PER_VM * KVM_EVT_MAX_RECORDS];
+
+	unsigned long long kvm_vm_ioctl_create_vcpu[KVM_EVT_MAX_RECORDS];
+
+	unsigned long long kvm_arch_vcpu_ioctl_set_regs[KVM_EVT_MAX_RECORDS];
+	unsigned long long kvm_vm_ioctl_KVM_SET_REGS_total[KVM_EVT_MAX_RECORDS];
+
+	unsigned long long kvm_arch_vcpu_ioctl_set_fpu[KVM_EVT_MAX_RECORDS];
+	unsigned long long kvm_vm_ioctl_KVM_SET_FPU_total[KVM_EVT_MAX_RECORDS];
+
+	unsigned long long kvm_arch_vcpu_ioctl_set_sregs[KVM_EVT_MAX_RECORDS];
+	unsigned long long kvm_vm_ioctl_KVM_SET_SREGS_total[KVM_EVT_MAX_RECORDS];
+} kvm_evt_durations_t;
+static kvm_evt_durations_t kvm_durations;
+static int kvm_durations_i = -1;
+static int kvm_durations_set_mem_i = -1;
+
 __weak void kvm_arch_mmu_notifier_invalidate_range(struct kvm *kvm,
 						   unsigned long start, unsigned long end)
 {
@@ -3173,7 +3199,7 @@ static int kvm_vm_ioctl_create_vcpu(struct kvm *kvm, u32 id)
 	kvm_create_vcpu_debugfs(vcpu);
 
 	ns_elapsed = ktime_get_ns() - ns_before;
-	printk(KERN_ERR "[kvmprof] kvm_vm_ioctl_create_vcpu %llu ns\n", ns_elapsed);
+	kvm_durations.kvm_vm_ioctl_create_vcpu[kvm_durations_i] = ns_elapsed;
 
 	return r;
 
@@ -3272,12 +3298,11 @@ out_free1:
 	}
 	case KVM_SET_REGS: {
 		struct kvm_regs *kvm_regs;
-		unsigned long long ns_before, ns_elapsed, ns_elapsed_int, ns_elapsed_tot;
+		unsigned long long ns_before, ns_elapsed, ns_elapsed_int;
 
 		ns_elapsed_int = 0;
 		ns_before = ktime_get_ns();
 		kvm_regs = memdup_user(argp, sizeof(*kvm_regs));
-		ns_elapsed = ktime_get_ns() - ns_before;
 
 		if (IS_ERR(kvm_regs)) {
 			r = PTR_ERR(kvm_regs);
@@ -3286,10 +3311,10 @@ out_free1:
 		r = kvm_arch_vcpu_ioctl_set_regs(vcpu, kvm_regs, &ns_elapsed_int);
 		kfree(kvm_regs);
 
-		ns_elapsed_tot = ktime_get_ns() - ns_before;
-		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_REGS:memdup_user %llu ns\n", ns_elapsed);
-		printk(KERN_ERR "[kvmprof] kvm_arch_vcpu_ioctl_set_regs %llu ns\n", ns_elapsed_int);
-		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_REGS:total %llu ns\n", ns_elapsed_tot);
+		ns_elapsed = ktime_get_ns() - ns_before;
+
+		kvm_durations.kvm_arch_vcpu_ioctl_set_regs[kvm_durations_i] = ns_elapsed_int;
+		kvm_durations.kvm_vm_ioctl_KVM_SET_REGS_total[kvm_durations_i] = ns_elapsed;
 		break;
 	}
 	case KVM_GET_SREGS: {
@@ -3308,12 +3333,11 @@ out_free1:
 		break;
 	}
 	case KVM_SET_SREGS: {
-		unsigned long long ns_before, ns_elapsed, ns_elapsed_int, ns_elapsed_tot;
+		unsigned long long ns_before, ns_elapsed, ns_elapsed_int;
 
 		ns_elapsed_int = 0;
 		ns_before = ktime_get_ns();
 		kvm_sregs = memdup_user(argp, sizeof(*kvm_sregs));
-		ns_elapsed = ktime_get_ns() - ns_before;
 
 		if (IS_ERR(kvm_sregs)) {
 			r = PTR_ERR(kvm_sregs);
@@ -3322,10 +3346,9 @@ out_free1:
 		}
 		r = kvm_arch_vcpu_ioctl_set_sregs(vcpu, kvm_sregs, &ns_elapsed_int);
 
-		ns_elapsed_tot = ktime_get_ns() - ns_before;
-		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_SREGS:memdup_user %llu ns\n", ns_elapsed);
-		printk(KERN_ERR "[kvmprof] kvm_arch_vcpu_ioctl_set_sregs %llu ns\n", ns_elapsed_int);
-		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_SREGS:total %llu ns\n", ns_elapsed_tot);
+		ns_elapsed = ktime_get_ns() - ns_before;
+		kvm_durations.kvm_arch_vcpu_ioctl_set_sregs[kvm_durations_i] = ns_elapsed_int;
+		kvm_durations.kvm_vm_ioctl_KVM_SET_SREGS_total[kvm_durations_i] = ns_elapsed;
 		break;
 	}
 	case KVM_GET_MP_STATE: {
@@ -3411,12 +3434,11 @@ out_free1:
 		break;
 	}
 	case KVM_SET_FPU: {
-		unsigned long long ns_before, ns_elapsed, ns_elapsed_int, ns_elapsed_tot;
+		unsigned long long ns_before, ns_elapsed, ns_elapsed_int;
 
 		ns_elapsed_int = 0;
 		ns_before = ktime_get_ns();
 		fpu = memdup_user(argp, sizeof(*fpu));
-		ns_elapsed = ktime_get_ns() - ns_before;
 
 		if (IS_ERR(fpu)) {
 			r = PTR_ERR(fpu);
@@ -3425,10 +3447,9 @@ out_free1:
 		}
 		r = kvm_arch_vcpu_ioctl_set_fpu(vcpu, fpu, &ns_elapsed_int);
 
-		ns_elapsed_tot = ktime_get_ns() - ns_before;
-		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_FPU:memdup_user %llu ns\n", ns_elapsed);
-		printk(KERN_ERR "[kvmprof] kvm_arch_vcpu_ioctl_set_fpu %llu ns\n", ns_elapsed_int);
-		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_FPU:total %llu ns\n", ns_elapsed_tot);
+		ns_elapsed = ktime_get_ns() - ns_before;
+		kvm_durations.kvm_arch_vcpu_ioctl_set_fpu[kvm_durations_i] = ns_elapsed_int;
+		kvm_durations.kvm_vm_ioctl_KVM_SET_FPU_total[kvm_durations_i] = ns_elapsed;
 		break;
 	}
 	default:
@@ -3646,6 +3667,8 @@ static int kvm_ioctl_create_device(struct kvm *kvm,
 
 static long kvm_vm_ioctl_check_extension_generic(struct kvm *kvm, long arg)
 {
+	int i, j;
+
 	switch (arg) {
 	case KVM_CAP_USER_MEMORY:
 	case KVM_CAP_DESTROY_MEMORY_REGION_WORKS:
@@ -3683,6 +3706,47 @@ static long kvm_vm_ioctl_check_extension_generic(struct kvm *kvm, long arg)
 #endif
 	case KVM_CAP_NR_MEMSLOTS:
 		return KVM_USER_MEM_SLOTS;
+	
+	case KVM_CAP_HACK_PRINT_DURATIONS:
+		for(i = 0; i < kvm_durations_i; ++i) {
+			printk(KERN_ERR "[kvmprof] kvm_dev_ioctl_create_vm %llu ns\n",
+				kvm_durations.kvm_dev_ioctl_create_vm[i]);
+
+			for(j = KVM_SET_USER_MEM_REGIONS_PER_VM * i; j < KVM_SET_USER_MEM_REGIONS_PER_VM * (i + 1); ++j) {
+				printk(KERN_ERR "[kvmprof] kvm_vm_ioctl_set_memory_region %llu ns\n",
+					kvm_durations.kvm_vm_ioctl_set_memory_region[j]);
+				printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_USER_MEMORY_REGION:total %llu ns\n",
+					kvm_durations.kvm_vm_ioctl_KVM_SET_USER_MEMORY_REGION_total[j]);
+			}
+
+			printk(KERN_ERR "[kvmprof] kvm_vm_ioctl_create_vcpu %llu ns\n",
+				kvm_durations.kvm_vm_ioctl_create_vcpu[i]);
+
+			printk(KERN_ERR "[kvmprof] kvm_arch_vcpu_ioctl_set_regs %llu ns\n",
+				kvm_durations.kvm_arch_vcpu_ioctl_set_regs[i]);
+			printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_REGS:total %llu ns\n",
+				kvm_durations.kvm_vm_ioctl_KVM_SET_REGS_total[i]);
+
+			printk(KERN_ERR "[kvmprof] kvm_arch_vcpu_ioctl_set_fpu %llu ns\n",
+				kvm_durations.kvm_arch_vcpu_ioctl_set_fpu[i]);
+			printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_FPU:total %llu ns\n",
+				kvm_durations.kvm_vm_ioctl_KVM_SET_FPU_total[i]);
+
+			printk(KERN_ERR "[kvmprof] kvm_arch_vcpu_ioctl_set_sregs %llu ns\n",
+				kvm_durations.kvm_arch_vcpu_ioctl_set_sregs[i]);
+			printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_SREGS:total %llu ns\n",
+				kvm_durations.kvm_vm_ioctl_KVM_SET_SREGS_total[i]);
+		}
+		break;
+
+	case KVM_CAP_HACK_CLR_DURATIONS:
+		mutex_lock(&kvm_lock);
+		kvm_durations_i = 0;
+		kvm_durations_set_mem_i = 0;
+		memset(&kvm_durations, 0, sizeof(kvm_evt_durations_t));
+		mutex_unlock(&kvm_lock);
+		break;
+
 	default:
 		break;
 	}
@@ -3748,7 +3812,7 @@ static long kvm_vm_ioctl(struct file *filp,
 	}
 	case KVM_SET_USER_MEMORY_REGION: {
 		struct kvm_userspace_memory_region kvm_userspace_mem;
-		unsigned long long ns_before, ns_elapsed, ns_elapsed_int, ns_elapsed_tot;
+		unsigned long long ns_before, ns_elapsed, ns_elapsed_int;
 
 		r = -EFAULT;
 		ns_elapsed_int = 0;
@@ -3756,14 +3820,12 @@ static long kvm_vm_ioctl(struct file *filp,
 		if (copy_from_user(&kvm_userspace_mem, argp,
 						sizeof(kvm_userspace_mem)))
 			goto out;
-		ns_elapsed = ktime_get_ns() - ns_before;
 
 		r = kvm_vm_ioctl_set_memory_region(kvm, &kvm_userspace_mem, &ns_elapsed_int);
 
-		ns_elapsed_tot = ktime_get_ns() - ns_before;
-		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_USER_MEMORY_REGION:copy_from_user %llu ns\n", ns_elapsed);
-		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl_set_memory_region %llu ns\n", ns_elapsed_int);
-		printk(KERN_ERR "[kvmprof] kvm_vm_ioctl:KVM_SET_USER_MEMORY_REGION:total %llu ns\n", ns_elapsed_tot);
+		ns_elapsed = ktime_get_ns() - ns_before;
+		kvm_durations.kvm_vm_ioctl_set_memory_region[++kvm_durations_set_mem_i] = ns_elapsed_int;
+		kvm_durations.kvm_vm_ioctl_KVM_SET_USER_MEMORY_REGION_total[kvm_durations_set_mem_i] = ns_elapsed;
 		break;
 	}
 	case KVM_GET_DIRTY_LOG: {
@@ -4012,8 +4074,7 @@ static int kvm_dev_ioctl_create_vm(unsigned long type)
 	fd_install(r, file);
 
 	ns_elapsed = ktime_get_ns() - ns_before;
-
-	printk(KERN_ERR "[kvmprof] kvm_dev_ioctl_create_vm %llu ns\n", ns_elapsed);
+	kvm_durations.kvm_dev_ioctl_create_vm[++kvm_durations_i] = ns_elapsed;
 
 	return r;
 
